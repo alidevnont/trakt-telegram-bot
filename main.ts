@@ -3,6 +3,7 @@ import { createBot } from "./src/bot/index.ts";
 const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const traktClientId = Deno.env.get("TRAKT_CLIENT_ID");
 const traktClientSecret = Deno.env.get("TRAKT_CLIENT_SECRET");
+const webhookUrl = Deno.env.get("WEBHOOK_URL");
 
 if (!botToken) {
   console.error("❌ TELEGRAM_BOT_TOKEN is required");
@@ -15,47 +16,51 @@ if (!traktClientId || !traktClientSecret) {
 }
 
 const bot = createBot(botToken);
+const port = parseInt(Deno.env.get("PORT") || "8000");
 
 console.log("🤖 Starting Trakt Telegram Bot...");
 
-// Deno Deploy mode: use webhooks
-const domain = Deno.env.get("DENO_DEPLOYMENT_ID");
-const port = parseInt(Deno.env.get("PORT") || "8000");
+Deno.serve({ port }, async (req) => {
+  const url = new URL(req.url);
 
-if (domain) {
-  // Running on Deno Deploy - use webhooks
-  const webhookUrl = `https://${domain}.deno.dev/webhook`;
-
-  await bot.api.setWebhook(webhookUrl);
-  console.log(`✅ Webhook set: ${webhookUrl}`);
-
-  Deno.serve({ port }, async (req) => {
-    const url = new URL(req.url);
-
-    if (url.pathname === "/webhook" && req.method === "POST") {
+  if (url.pathname === "/webhook" && req.method === "POST") {
+    try {
       const update = await req.json();
       await bot.handleUpdate(update);
-      return new Response("OK");
+    } catch (e) {
+      console.error("Webhook error:", e);
     }
+    return new Response("OK");
+  }
 
-    if (url.pathname === "/health") {
-      return new Response("OK");
+  if (url.pathname === "/health") {
+    return new Response("OK");
+  }
+
+  if (url.pathname === "/set-webhook" && req.method === "POST") {
+    if (!webhookUrl) {
+      return new Response("WEBHOOK_URL not set", { status: 500 });
     }
+    try {
+      const result = await bot.api.setWebhook(webhookUrl + "/webhook");
+      return new Response(JSON.stringify(result), {
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
 
-    return new Response("Trakt Telegram Bot", { status: 200 });
-  });
+  return new Response("Trakt Telegram Bot is running", { status: 200 });
+});
+
+console.log(`✅ Server running on port ${port}`);
+if (webhookUrl) {
+  console.log(`📡 Webhook: ${webhookUrl}/webhook`);
+  console.log("💡 Visit /set-webhook to register the webhook");
 } else {
-  // Local development - use long polling
-  console.log("📡 Using long polling (local mode)");
-
-  bot.start({
-    onStart: (botInfo) => {
-      console.log(`✅ Bot connected as @${botInfo.username}`);
-    },
-  });
-
-  Deno.addSignalListener("SIGINT", () => {
-    bot.stop();
-    Deno.exit(0);
-  });
+  console.log("⚠️ WEBHOOK_URL not set. Set it in Deno Deploy env vars.");
 }
