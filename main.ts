@@ -1,10 +1,5 @@
-import { load } from "std/dotenv";
 import { createBot } from "./src/bot/index.ts";
 
-// Load environment variables
-await load();
-
-// Validate required env vars
 const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const traktClientId = Deno.env.get("TRAKT_CLIENT_ID");
 const traktClientSecret = Deno.env.get("TRAKT_CLIENT_SECRET");
@@ -16,32 +11,51 @@ if (!botToken) {
 
 if (!traktClientId || !traktClientSecret) {
   console.error("❌ TRAKT_CLIENT_ID and TRAKT_CLIENT_SECRET are required");
-  console.error("   Get them from: https://trakt.tv/oauth/applications");
   Deno.exit(1);
 }
 
-// Create and start bot
 const bot = createBot(botToken);
 
 console.log("🤖 Starting Trakt Telegram Bot...");
 
-bot.start({
-  onStart: (botInfo) => {
-    console.log(`✅ Bot connected as @${botInfo.username}`);
-    console.log(`   User: ${botInfo.first_name}`);
-    console.log("   Press Ctrl+C to stop");
-  },
-});
+// Deno Deploy mode: use webhooks
+const domain = Deno.env.get("DENO_DEPLOYMENT_ID");
+const port = parseInt(Deno.env.get("PORT") || "8000");
 
-// Graceful shutdown
-Deno.addSignalListener("SIGINT", () => {
-  console.log("\n🛑 Stopping bot...");
-  bot.stop();
-  Deno.exit(0);
-});
+if (domain) {
+  // Running on Deno Deploy - use webhooks
+  const webhookUrl = `https://${domain}.deno.dev/webhook`;
 
-Deno.addSignalListener("SIGTERM", () => {
-  console.log("\n🛑 Stopping bot...");
-  bot.stop();
-  Deno.exit(0);
-});
+  await bot.api.setWebhook(webhookUrl);
+  console.log(`✅ Webhook set: ${webhookUrl}`);
+
+  Deno.serve({ port }, async (req) => {
+    const url = new URL(req.url);
+
+    if (url.pathname === "/webhook" && req.method === "POST") {
+      const update = await req.json();
+      await bot.handleUpdate(update);
+      return new Response("OK");
+    }
+
+    if (url.pathname === "/health") {
+      return new Response("OK");
+    }
+
+    return new Response("Trakt Telegram Bot", { status: 200 });
+  });
+} else {
+  // Local development - use long polling
+  console.log("📡 Using long polling (local mode)");
+
+  bot.start({
+    onStart: (botInfo) => {
+      console.log(`✅ Bot connected as @${botInfo.username}`);
+    },
+  });
+
+  Deno.addSignalListener("SIGINT", () => {
+    bot.stop();
+    Deno.exit(0);
+  });
+}

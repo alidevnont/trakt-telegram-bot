@@ -8,9 +8,6 @@
   },
   "imports": {
     "@trakt/api": "jsr:@trakt/api",
-    "grammy": "https://deno.land/x/grammy@v1.45.0/mod.ts",
-    "grammy_storages/denokv": "https://deno.land/x/grammy_storages/denokv/src/mod.ts",
-    "std/dotenv": "jsr:@std/dotenv@1",
-    "std/fmt": "jsr:@std/fmt"
+    "grammy": "https://deno.land/x/grammy@v1.45.0/mod.ts"
   }
 }
