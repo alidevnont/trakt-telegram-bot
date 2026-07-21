@@ -17,6 +17,7 @@ if (!traktClientId || !traktClientSecret) {
 
 const bot = createBot(botToken);
 const port = parseInt(Deno.env.get("PORT") || "8000");
+const cleanWebhookUrl = webhookUrl?.replace(/\/+$/, "");
 
 console.log("🤖 Starting Trakt Telegram Bot...");
 
@@ -42,7 +43,7 @@ Deno.serve({ port }, async (req) => {
       return new Response("WEBHOOK_URL not set", { status: 500 });
     }
     try {
-      const result = await bot.api.setWebhook(webhookUrl + "/webhook");
+      const result = await bot.api.setWebhook(cleanWebhookUrl + "/webhook");
       return new Response(JSON.stringify(result), {
         headers: { "Content-Type": "application/json" },
       });
@@ -58,8 +59,8 @@ Deno.serve({ port }, async (req) => {
 });
 
 console.log(`✅ Server running on port ${port}`);
-if (webhookUrl) {
-  console.log(`📡 Webhook: ${webhookUrl}/webhook`);
+if (cleanWebhookUrl) {
+  console.log(`📡 Webhook: ${cleanWebhookUrl}/webhook`);
   console.log("💡 Visit /set-webhook to register the webhook");
 } else {
   console.log("⚠️ WEBHOOK_URL not set. Set it in Deno Deploy env vars.");
