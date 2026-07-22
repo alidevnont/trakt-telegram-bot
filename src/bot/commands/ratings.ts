@@ -12,12 +12,12 @@ export async function ratingsCommand(ctx: Context) {
 
   try {
     const [moviesRes, showsRes] = await Promise.all([
-      trakt.sync.ratings({
-        query: { type: "movie" },
+      trakt.sync.ratings.get({
+        params: { type: "movie", rating: "1,2,3,4,5,6,7,8,9,10" },
         headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
       }),
-      trakt.sync.ratings({
-        query: { type: "show" },
+      trakt.sync.ratings.get({
+        params: { type: "show", rating: "1,2,3,4,5,6,7,8,9,10" },
         headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
       }),
     ]);
@@ -28,26 +28,16 @@ export async function ratingsCommand(ctx: Context) {
     if (moviesRes.status === 200 && moviesRes.body.length > 0) {
       message += "🎬 **أفلام:**\n\n";
       for (const entry of moviesRes.body.slice(0, 10)) {
-        if (entry.movie) {
-          const stars = "⭐".repeat(Math.round((entry.rating || 0) / 2));
-          message += `• **${entry.movie.title}** - ${stars} (${entry.rating}/10)\n`;
-          keyboard.push([
-            { text: `🎬 ${entry.movie.title}`, callback_data: `detail:${entry.movie.ids?.slug}` },
-          ]);
-        }
+        const stars = "⭐".repeat(Math.round(entry.rating / 2));
+        message += `• **${entry.type}** - ${stars} (${entry.rating}/10)\n`;
       }
     }
 
     if (showsRes.status === 200 && showsRes.body.length > 0) {
       message += "\n📺 **مسلسلات:**\n\n";
       for (const entry of showsRes.body.slice(0, 10)) {
-        if (entry.show) {
-          const stars = "⭐".repeat(Math.round((entry.rating || 0) / 2));
-          message += `• **${entry.show.title}** - ${stars} (${entry.rating}/10)\n`;
-          keyboard.push([
-            { text: `📺 ${entry.show.title}`, callback_data: `detail:${entry.show.ids?.slug}` },
-          ]);
-        }
+        const stars = "⭐".repeat(Math.round(entry.rating / 2));
+        message += `• **${entry.type}** - ${stars} (${entry.rating}/10)\n`;
       }
     }
 
@@ -78,7 +68,6 @@ export async function rateItem(ctx: Context, slug: string, rating?: number) {
   }
 
   if (!rating) {
-    // Show rating keyboard
     await ctx.reply("⭐ اختر تقييمك:", {
       reply_markup: ratingKeyboard(slug),
     });
@@ -96,7 +85,6 @@ export async function rateItem(ctx: Context, slug: string, rating?: number) {
     }
 
     const item = searchRes.body[0];
-    const type = item.movie ? "movies" : "shows";
     const ids = item.movie?.ids || item.show?.ids;
 
     if (!ids) {
@@ -104,8 +92,8 @@ export async function rateItem(ctx: Context, slug: string, rating?: number) {
       return;
     }
 
-    const res = await trakt.sync.ratingsAdd({
-      body: { [type]: [{ ids, rating }] },
+    const res = await trakt.sync.ratings.add({
+      body: { movies: item.movie ? [{ ids, rating }] : [], shows: item.show ? [{ ids, rating }] : [] },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 

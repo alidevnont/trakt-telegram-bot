@@ -11,8 +11,9 @@ export async function historyCommand(ctx: Context, page = 1) {
   }
 
   try {
-    const res = await trakt.sync.history({
-      query: { type: "movie,show", page, limit: 10 },
+    const res = await trakt.sync.history.get({
+      params: { type: "movies", id: "0" },
+      query: { page, limit: 10 },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
@@ -28,27 +29,12 @@ export async function historyCommand(ctx: Context, page = 1) {
     const keyboard = [];
 
     for (const entry of res.body) {
-      if (entry.movie) {
-        const m = entry.movie;
-        const watched = entry.watched_at
-          ? new Date(entry.watched_at).toLocaleDateString("ar-SA")
-          : "";
-        message += `🎬 **${m.title}** (${m.year || "?"})\n`;
-        message += `   📅 ${watched} | ▶️ ${entry.plays || 1} مرة\n`;
-        keyboard.push([
-          { text: `🎬 ${m.title}`, callback_data: `detail:${m.ids?.slug}` },
-        ]);
-      } else if (entry.show) {
-        const s = entry.show;
-        const watched = entry.watched_at
-          ? new Date(entry.watched_at).toLocaleDateString("ar-SA")
-          : "";
-        message += `📺 **${s.title}** (${s.year || "?"})\n`;
-        message += `   📅 ${watched}\n`;
-        keyboard.push([
-          { text: `📺 ${s.title}`, callback_data: `detail:${s.ids?.slug}` },
-        ]);
-      }
+      const watched = entry.watched_at
+        ? new Date(entry.watched_at).toLocaleDateString("ar-SA")
+        : "";
+      const type = entry.type === "movie" ? "🎬" : "📺";
+      message += `${type} **${entry.type}** - ${entry.action}\n`;
+      message += `   📅 ${watched}\n`;
     }
 
     keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
@@ -80,7 +66,6 @@ export async function addToHistory(ctx: Context, slug: string) {
     }
 
     const item = searchRes.body[0];
-    const type = item.movie ? "movies" : "shows";
     const ids = item.movie?.ids || item.show?.ids;
 
     if (!ids) {
@@ -88,12 +73,12 @@ export async function addToHistory(ctx: Context, slug: string) {
       return;
     }
 
-    const res = await trakt.sync.historyAdd({
-      body: { [type]: [{ ids, watched_at: new Date().toISOString() }] },
+    const res = await trakt.sync.history.add({
+      body: { movies: item.movie ? [{ ids }] : [], shows: item.show ? [{ ids }] : [] },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
-    if (res.status === 201) {
+    if (res.status === 200) {
       const title = item.movie?.title || item.show?.title;
       await ctx.reply(`✅ تمت إضافة **${title}** إلى سجل المشاهدة.`, {
         parse_mode: "Markdown",

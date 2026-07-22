@@ -6,33 +6,24 @@ export async function calendarCommand(ctx: Context) {
   try {
     const today = new Date();
     const startDate = today.toISOString().split("T")[0];
-    const days = 7; // Next 7 days
+    const days = 7;
 
-    // Get user's calendar if authenticated, otherwise global calendar
-    let showsRes, moviesRes;
+    const target = ctx.traktToken ? "my" : "all";
 
-    if (ctx.traktToken) {
-      [showsRes, moviesRes] = await Promise.all([
-        trakt.calendars.shows({
-          query: { start_date: startDate, days },
-          headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
-        }),
-        trakt.calendars.movies({
-          query: { start_date: startDate, days },
-          headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
-        }),
-      ]);
-    } else {
-      // Use public calendar (my shows)
-      [showsRes, moviesRes] = await Promise.all([
-        trakt.calendars.shows({
-          query: { start_date: startDate, days, type: "my" },
-        }),
-        trakt.calendars.movies({
-          query: { start_date: startDate, days, type: "my" },
-        }),
-      ]);
-    }
+    const [showsRes, moviesRes] = await Promise.all([
+      trakt.calendars.shows({
+        params: { target, start_date: startDate, days: days.toString() },
+        headers: ctx.traktToken
+          ? { Authorization: `Bearer ${ctx.traktToken.accessToken}` }
+          : {},
+      }),
+      trakt.calendars.movies({
+        params: { target, start_date: startDate, days: days.toString() },
+        headers: ctx.traktToken
+          ? { Authorization: `Bearer ${ctx.traktToken.accessToken}` }
+          : {},
+      }),
+    ]);
 
     let message = "📅 **التقويم - الأسبوع القادم**\n\n";
     const keyboard = [];
@@ -40,14 +31,14 @@ export async function calendarCommand(ctx: Context) {
     if (showsRes.status === 200 && showsRes.body.length > 0) {
       message += "📺 **مسلسلات قادمة:**\n\n";
       for (const entry of showsRes.body.slice(0, 10)) {
-        if (entry.show) {
-          const airDate = entry.first_aired
-            ? new Date(entry.first_aired).toLocaleDateString("ar-SA")
-            : "?";
-          message += `• **${entry.show.title}** - S${entry.season}E${entry.episode}\n`;
-          message += `  📅 ${airDate}\n`;
+        const airDate = entry.first_aired
+          ? new Date(entry.first_aired).toLocaleDateString("ar-SA")
+          : "?";
+        message += `• **${entry.show?.title || "?"}**\n`;
+        message += `  📅 ${airDate}\n`;
+        if (entry.show?.ids?.slug) {
           keyboard.push([
-            { text: `📺 ${entry.show.title}`, callback_data: `detail:${entry.show.ids?.slug}` },
+            { text: `📺 ${entry.show.title}`, callback_data: `detail:${entry.show.ids.slug}` },
           ]);
         }
       }
@@ -56,14 +47,14 @@ export async function calendarCommand(ctx: Context) {
     if (moviesRes.status === 200 && moviesRes.body.length > 0) {
       message += "\n🎬 **أفلام قادمة:**\n\n";
       for (const entry of moviesRes.body.slice(0, 10)) {
-        if (entry.movie) {
-          const releaseDate = entry.released
-            ? new Date(entry.released).toLocaleDateString("ar-SA")
-            : "?";
-          message += `• **${entry.movie.title}** (${entry.movie.year || "?"})\n`;
-          message += `  📅 ${releaseDate}\n`;
+        const releaseDate = entry.released
+          ? new Date(entry.released).toLocaleDateString("ar-SA")
+          : "?";
+        message += `• **${entry.movie?.title || "?"}** (${entry.movie?.year || "?"})\n`;
+        message += `  📅 ${releaseDate}\n`;
+        if (entry.movie?.ids?.slug) {
           keyboard.push([
-            { text: `🎬 ${entry.movie.title}`, callback_data: `detail:${entry.movie.ids?.slug}` },
+            { text: `🎬 ${entry.movie.title}`, callback_data: `detail:${entry.movie.ids.slug}` },
           ]);
         }
       }
@@ -74,7 +65,6 @@ export async function calendarCommand(ctx: Context) {
       (!moviesRes.body || moviesRes.body.length === 0)
     ) {
       message += "لا يوجد محتوى قادم في الأسبوع القادم.\n";
-      message += "\n💡 ربط حسابك بـ Trakt يعرض مسلسلاتك المفضلة!";
     }
 
     keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);

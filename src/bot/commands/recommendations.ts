@@ -10,14 +10,12 @@ export async function recommendationsCommand(ctx: Context) {
     return;
   }
 
-  await ctx.reply("🎯 جاري تحميل التوصيات...");
-
   try {
     const [moviesRes, showsRes] = await Promise.all([
-      trakt.recommendations.movies({
+      trakt.recommendations.movies.recommend({
         headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
       }),
-      trakt.recommendations.shows({
+      trakt.recommendations.shows.recommend({
         headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
       }),
     ]);
@@ -29,7 +27,7 @@ export async function recommendationsCommand(ctx: Context) {
       message += "🎬 **أفلام موصى بها:**\n\n";
       for (const movie of moviesRes.body.slice(0, 5)) {
         message += `• **${movie.title}** (${movie.year || "?"})\n`;
-        message += `  ⭐ ${movie.rating || "N/A"} | ${movie.runtime || "?"} min\n`;
+        message += `  ⭐ ${movie.rating || "N/A"}\n`;
         keyboard.push([
           { text: `🎬 ${movie.title}`, callback_data: `detail:${movie.ids?.slug}` },
         ]);
@@ -40,7 +38,7 @@ export async function recommendationsCommand(ctx: Context) {
       message += "\n📺 **مسلسلات موصى بها:**\n\n";
       for (const show of showsRes.body.slice(0, 5)) {
         message += `• **${show.title}** (${show.year || "?"})\n`;
-        message += `  ⭐ ${show.rating || "N/A"} | ${show.airs?.day || "?"}\n`;
+        message += `  ⭐ ${show.rating || "N/A"}\n`;
         keyboard.push([
           { text: `📺 ${show.title}`, callback_data: `detail:${show.ids?.slug}` },
         ]);
@@ -49,7 +47,7 @@ export async function recommendationsCommand(ctx: Context) {
 
     if (moviesRes.status !== 200 && showsRes.status !== 200) {
       await ctx.reply(
-        "❌ لا توجد توصيات حالياً.\n\n观看了更多 المحتوى للحصول على توصيات أفضل.",
+        "❌ لا توجد توصيات حالياً.",
         { reply_markup: backToMenu() },
       );
       return;
