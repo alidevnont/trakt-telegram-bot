@@ -93,7 +93,8 @@ export function createBot(token: string) {
     try {
       // Try to get as movie first, then show
       let res = await trakt.movies.summary({
-        params: { id: slug, extended: "full" },
+        params: { id: slug },
+        query: { extended: "full" },
       });
 
       if (res.status === 200) {
@@ -147,7 +148,8 @@ export function createBot(token: string) {
 
       // Try as show
       res = await trakt.shows.summary({
-        params: { id: slug, extended: "full" },
+        params: { id: slug },
+        query: { extended: "full" },
       });
 
       if (res.status === 200) {

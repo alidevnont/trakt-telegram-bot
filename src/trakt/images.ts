@@ -12,7 +12,8 @@ export async function getMovieImages(
 ): Promise<TraktImages | null> {
   try {
     const res = await trakt.movies.summary({
-      params: { id: slug, extended: "images" },
+      params: { id: slug },
+      query: { extended: "full,images" },
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
     if (res.status === 200) {
@@ -28,7 +29,8 @@ export async function getShowImages(
 ): Promise<TraktImages | null> {
   try {
     const res = await trakt.shows.summary({
-      params: { id: slug, extended: "images" },
+      params: { id: slug },
+      query: { extended: "full,images" },
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
     if (res.status === 200) {
