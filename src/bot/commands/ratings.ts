@@ -29,7 +29,8 @@ export async function ratingsCommand(ctx: Context) {
       message += "🎬 **أفلام:**\n\n";
       for (const entry of moviesRes.body.slice(0, 10)) {
         const stars = "⭐".repeat(Math.round(entry.rating / 2));
-        message += `• **${entry.type}** - ${stars} (${entry.rating}/10)\n`;
+        const title = entry.movie?.title || entry.type;
+        message += `• **${title}** - ${stars} (${entry.rating}/10)\n`;
       }
     }
 
@@ -37,7 +38,8 @@ export async function ratingsCommand(ctx: Context) {
       message += "\n📺 **مسلسلات:**\n\n";
       for (const entry of showsRes.body.slice(0, 10)) {
         const stars = "⭐".repeat(Math.round(entry.rating / 2));
-        message += `• **${entry.type}** - ${stars} (${entry.rating}/10)\n`;
+        const title = entry.show?.title || entry.type;
+        message += `• **${title}** - ${stars} (${entry.rating}/10)\n`;
       }
     }
 
@@ -75,17 +77,23 @@ export async function rateItem(ctx: Context, slug: string, rating?: number) {
   }
 
   try {
-    const searchRes = await trakt.search({
-      query: { query: slug, type: "movie,show" },
+    const searchRes = await trakt.search.query({
+      params: { type: "movie" },
+      query: { query: slug, limit: 1 },
+    });
+    const searchResShow = await trakt.search.query({
+      params: { type: "show" },
+      query: { query: slug, limit: 1 },
     });
 
-    if (searchRes.status !== 200 || searchRes.body.length === 0) {
+    const searchResults = [...(searchRes.body || []), ...(searchResShow.body || [])];
+    if (searchResults.length === 0) {
       await ctx.reply("❌ لم يتم العثور على العنصر.");
       return;
     }
 
-    const item = searchRes.body[0];
-    const ids = item.movie?.ids || item.show?.ids;
+    const found = searchResults[0];
+    const ids = found.movie?.ids || found.show?.ids;
 
     if (!ids) {
       await ctx.reply("❌ لم يتم العثور على العنصر.");
@@ -93,12 +101,12 @@ export async function rateItem(ctx: Context, slug: string, rating?: number) {
     }
 
     const res = await trakt.sync.ratings.add({
-      body: { movies: item.movie ? [{ ids, rating }] : [], shows: item.show ? [{ ids, rating }] : [] },
+      body: { movies: found.movie ? [{ ids, rating }] : [], shows: found.show ? [{ ids, rating }] : [] },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
     if (res.status === 201) {
-      const title = item.movie?.title || item.show?.title;
+      const title = found.movie?.title || found.show?.title;
       await ctx.reply(
         `✅ تمت تقييم **${title}** بـ ${"⭐".repeat(Math.round(rating / 2))} (${rating}/10)`,
         { parse_mode: "Markdown" },

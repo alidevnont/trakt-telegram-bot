@@ -17,8 +17,14 @@ export async function searchCommand(ctx: Context) {
 
   try {
     const [moviesRes, showsRes] = await Promise.all([
-      trakt.search({ query: { query, type: "movie", limit: 5 } }),
-      trakt.search({ query: { query, type: "show", limit: 5 } }),
+      trakt.search.query({
+        params: { type: "movie" },
+        query: { query, limit: 5 },
+      }),
+      trakt.search.query({
+        params: { type: "show" },
+        query: { query, limit: 5 },
+      }),
     ]);
 
     let message = `🔍 نتائج البحث: "${query}"\n\n`;
@@ -57,7 +63,6 @@ export async function searchCommand(ctx: Context) {
 
     await ctx.reply(message, { parse_mode: "Markdown" });
 
-    // Show buttons for each result
     const keyboard = [];
     if (moviesRes.status === 200 && moviesRes.body.length > 0) {
       for (const item of moviesRes.body) {

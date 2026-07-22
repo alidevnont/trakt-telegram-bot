@@ -32,8 +32,9 @@ export async function historyCommand(ctx: Context, page = 1) {
       const watched = entry.watched_at
         ? new Date(entry.watched_at).toLocaleDateString("ar-SA")
         : "";
-      const type = entry.type === "movie" ? "🎬" : "📺";
-      message += `${type} **${entry.type}** - ${entry.action}\n`;
+      const icon = entry.type === "movie" ? "🎬" : "📺";
+      const title = entry.movie?.title || entry.show?.title || entry.episode?.title || entry.type;
+      message += `${icon} **${title}** - ${entry.action}\n`;
       message += `   📅 ${watched}\n`;
     }
 
@@ -56,17 +57,23 @@ export async function addToHistory(ctx: Context, slug: string) {
   }
 
   try {
-    const searchRes = await trakt.search({
-      query: { query: slug, type: "movie,show" },
+    const searchRes = await trakt.search.query({
+      params: { type: "movie" },
+      query: { query: slug, limit: 1 },
+    });
+    const searchResShow = await trakt.search.query({
+      params: { type: "show" },
+      query: { query: slug, limit: 1 },
     });
 
-    if (searchRes.status !== 200 || searchRes.body.length === 0) {
+    const searchResults = [...(searchRes.body || []), ...(searchResShow.body || [])];
+    if (searchResults.length === 0) {
       await ctx.reply("❌ لم يتم العثور على العنصر.");
       return;
     }
 
-    const item = searchRes.body[0];
-    const ids = item.movie?.ids || item.show?.ids;
+    const found = searchResults[0];
+    const ids = found.movie?.ids || found.show?.ids;
 
     if (!ids) {
       await ctx.reply("❌ لم يتم العثور على العنصر.");
@@ -74,12 +81,12 @@ export async function addToHistory(ctx: Context, slug: string) {
     }
 
     const res = await trakt.sync.history.add({
-      body: { movies: item.movie ? [{ ids }] : [], shows: item.show ? [{ ids }] : [] },
+      body: { movies: found.movie ? [{ ids }] : [], shows: found.show ? [{ ids }] : [] },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
     if (res.status === 200) {
-      const title = item.movie?.title || item.show?.title;
+      const title = found.movie?.title || found.show?.title;
       await ctx.reply(`✅ تمت إضافة **${title}** إلى سجل المشاهدة.`, {
         parse_mode: "Markdown",
       });
