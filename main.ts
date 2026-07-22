@@ -20,6 +20,8 @@ const port = parseInt(Deno.env.get("PORT") || "8000");
 const cleanWebhookUrl = webhookUrl?.replace(/\/+$/, "");
 
 console.log("🤖 Starting Trakt Telegram Bot...");
+await bot.init();
+console.log("✅ Bot initialized");
 
 Deno.serve({ port }, async (req) => {
   const url = new URL(req.url);
