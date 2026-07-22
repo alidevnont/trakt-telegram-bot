@@ -11,13 +11,29 @@ export async function historyCommand(ctx: Context, page = 1) {
   }
 
   try {
-    const res = await trakt.sync.history.get({
-      params: { type: "movies", id: "0" },
-      query: { page, limit: 10 },
-      headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
-    });
+    const [moviesRes, showsRes] = await Promise.all([
+      trakt.sync.history.get({
+        params: { type: "movies", id: "" },
+        query: { page, limit: 10 },
+        headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
+      }),
+      trakt.sync.history.get({
+        params: { type: "shows", id: "" },
+        query: { page, limit: 10 },
+        headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
+      }),
+    ]);
 
-    if (res.status !== 200 || res.body.length === 0) {
+    const allEntries = [
+      ...(moviesRes.body || []),
+      ...(showsRes.body || []),
+    ].sort((a, b) => {
+      const dateA = a.watched_at ? new Date(a.watched_at).getTime() : 0;
+      const dateB = b.watched_at ? new Date(b.watched_at).getTime() : 0;
+      return dateB - dateA;
+    }).slice(0, 10);
+
+    if (allEntries.length === 0) {
       await ctx.reply(
         "📺 **سجل المشاهدة فارغ**\n\nابدأ بمشاهدة محتوى لتسجيله هنا!",
         { parse_mode: "Markdown", reply_markup: backToMenu() },
@@ -28,7 +44,7 @@ export async function historyCommand(ctx: Context, page = 1) {
     let message = `📺 **سجل المشاهدة** (صفحة ${page})\n\n`;
     const keyboard = [];
 
-    for (const entry of res.body) {
+    for (const entry of allEntries) {
       const watched = entry.watched_at
         ? new Date(entry.watched_at).toLocaleDateString("ar-SA")
         : "";

@@ -15,6 +15,7 @@ export async function statsCommand(ctx: Context) {
 
     const statsRes = await trakt.users.stats({
       params: { id: username },
+      headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
     if (statsRes.status !== 200) {
@@ -66,7 +67,7 @@ export async function statsCommand(ctx: Context) {
       reply_markup: { inline_keyboard: keyboard },
     });
   } catch (error) {
-    console.error("Stats error:", error);
+    console.error("Stats error:", error.message || error);
     await ctx.reply("❌ حدث خطأ أثناء تحميل الإحصائيات.");
   }
 }
