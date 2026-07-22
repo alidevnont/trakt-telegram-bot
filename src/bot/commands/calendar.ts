@@ -8,101 +8,67 @@ export async function calendarCommand(ctx: Context) {
     const today = new Date();
     const startDate = today.toISOString().split("T")[0];
     const days = 7;
-
     const target = ctx.traktToken ? "my" : "all";
 
     const [showsRes, moviesRes] = await Promise.all([
       trakt.calendars.shows({
         params: { target, start_date: startDate, days: days.toString() },
-        headers: ctx.traktToken
-          ? { Authorization: `Bearer ${ctx.traktToken.accessToken}` }
-          : {},
+        headers: ctx.traktToken ? { Authorization: `Bearer ${ctx.traktToken.accessToken}` } : {},
       }),
       trakt.calendars.movies({
         params: { target, start_date: startDate, days: days.toString() },
-        headers: ctx.traktToken
-          ? { Authorization: `Bearer ${ctx.traktToken.accessToken}` }
-          : {},
+        headers: ctx.traktToken ? { Authorization: `Bearer ${ctx.traktToken.accessToken}` } : {},
       }),
     ]);
 
-    const allItems: Array<{
-      type: "show" | "movie";
-      title: string;
-      date: string;
-      slug: string;
-      images: Awaited<ReturnType<typeof getMovieImages>>;
-    }> = [];
+    const lines: string[] = [];
+    const kb: Array<Array<{ text: string; callback_data: string }>> = [];
+    let posterUrl: string | null = null;
 
     if (showsRes.status === 200 && showsRes.body.length > 0) {
       for (const entry of showsRes.body.slice(0, 5)) {
+        const title = entry.show?.title || "Unknown";
         const slug = entry.show?.ids?.slug || "";
-        const images = slug ? await getShowImages(slug, ctx.traktToken?.accessToken) : null;
-        allItems.push({
-          type: "show",
-          title: entry.show?.title || "Unknown",
-          date: entry.first_aired
-            ? new Date(entry.first_aired).toLocaleDateString("ar-SA")
-            : "?",
-          slug,
-          images,
-        });
+        const airDate = entry.first_aired ? new Date(entry.first_aired).toLocaleDateString("ar-SA") : "?";
+        lines.push(`📺 **${title}**\n   📅 ${airDate}`);
+        if (slug) kb.push([{ text: `📺 ${title}`, callback_data: `detail:${slug}` }]);
+        if (!posterUrl && slug) {
+          const imgs = await getShowImages(slug, ctx.traktToken?.accessToken);
+          posterUrl = getPosterUrl(imgs);
+        }
       }
     }
 
     if (moviesRes.status === 200 && moviesRes.body.length > 0) {
       for (const entry of moviesRes.body.slice(0, 5)) {
+        const title = entry.movie?.title || "Unknown";
         const slug = entry.movie?.ids?.slug || "";
-        const images = slug ? await getMovieImages(slug, ctx.traktToken?.accessToken) : null;
-        allItems.push({
-          type: "movie",
-          title: entry.movie?.title || "Unknown",
-          date: entry.released
-            ? new Date(entry.released).toLocaleDateString("ar-SA")
-            : "?",
-          slug,
-          images,
-        });
+        const releaseDate = entry.released ? new Date(entry.released).toLocaleDateString("ar-SA") : "?";
+        lines.push(`🎬 **${title}**\n   📅 ${releaseDate}`);
+        if (slug) kb.push([{ text: `🎬 ${title}`, callback_data: `detail:${slug}` }]);
+        if (!posterUrl && slug) {
+          const imgs = await getMovieImages(slug, ctx.traktToken?.accessToken);
+          posterUrl = getPosterUrl(imgs);
+        }
       }
     }
 
-    if (allItems.length === 0) {
-      await ctx.reply(
-        "📅 **التقويم - الأسبوع القادم**\n\nلا يوجد محتوى قادم في الأسبوع القادم.",
-        { parse_mode: "Markdown", reply_markup: backToMenu() },
-      );
+    if (lines.length === 0) {
+      await ctx.reply("📅 **التقويم - الأسبوع القادم**\n\nلا يوجد محتوى قادم.", {
+        parse_mode: "Markdown", reply_markup: backToMenu(),
+      });
       return;
     }
 
-    const first = allItems[0];
-    const posterUrl = getPosterUrl(first?.images);
-    const caption = `📅 **التقويم - الأسبوع القادم**\n\n${allItems.map((item) => {
-      const icon = item.type === "show" ? "📺" : "🎬";
-      return `${icon} **${item.title}**\n   📅 ${item.date}`;
-    }).join("\n")}`;
-
-    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    for (const item of allItems) {
-      const icon = item.type === "show" ? "📺" : "🎬";
-      if (item.slug) {
-        keyboard.push([
-          { text: `${icon} ${item.title}`, callback_data: `detail:${item.slug}` },
-        ]);
-      }
-    }
-    keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
+    kb.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
+    const caption = `📅 **التقويم - الأسبوع القادم**\n\n${lines.join("\n")}`;
 
     if (posterUrl) {
       await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
-        caption,
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
+        caption, parse_mode: "Markdown", reply_markup: { inline_keyboard: kb },
       });
     } else {
-      await ctx.reply(caption, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
-      });
+      await ctx.reply(caption, { parse_mode: "Markdown", reply_markup: { inline_keyboard: kb } });
     }
   } catch (error) {
     console.error("Calendar error:", error);

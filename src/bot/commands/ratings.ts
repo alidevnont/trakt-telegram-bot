@@ -5,9 +5,7 @@ import { ratingKeyboard, backToMenu } from "../keyboards.ts";
 
 export async function ratingsCommand(ctx: Context) {
   if (!ctx.traktToken) {
-    await ctx.reply(
-      "🔒 هذا الأمر يتطلب ربط حساب Trakt.\n\nاستخدم /start للربط.",
-    );
+    await ctx.reply("🔒 هذا الأمر يتطلب ربط حساب Trakt.\n\nاستخدم /start للربط.");
     return;
   }
 
@@ -23,78 +21,54 @@ export async function ratingsCommand(ctx: Context) {
       }),
     ]);
 
-    const allItems: Array<{
-      type: "movie" | "show";
-      title: string;
-      rating: number;
-      slug: string;
-      images: Awaited<ReturnType<typeof getMovieImages>>;
-    }> = [];
+    const lines: string[] = [];
+    const kb: Array<Array<{ text: string; callback_data: string }>> = [];
+    let posterUrl: string | null = null;
 
     if (moviesRes.status === 200 && moviesRes.body.length > 0) {
       for (const entry of moviesRes.body.slice(0, 5)) {
         const slug = entry.movie?.ids?.slug || "";
-        const images = slug ? await getMovieImages(slug, ctx.traktToken.accessToken) : null;
-        allItems.push({
-          type: "movie",
-          title: entry.movie?.title || "Unknown",
-          rating: entry.rating,
-          slug,
-          images,
-        });
+        const title = entry.movie?.title || "Unknown";
+        const stars = "⭐".repeat(Math.round(entry.rating / 2));
+        lines.push(`🎬 **${title}** - ${stars} (${entry.rating}/10)`);
+        kb.push([{ text: `🎬 ${title}`, callback_data: `detail:${slug}` }]);
+        if (!posterUrl && slug) {
+          const imgs = await getMovieImages(slug, ctx.traktToken.accessToken);
+          posterUrl = getPosterUrl(imgs);
+        }
       }
     }
 
     if (showsRes.status === 200 && showsRes.body.length > 0) {
       for (const entry of showsRes.body.slice(0, 5)) {
         const slug = entry.show?.ids?.slug || "";
-        const images = slug ? await getShowImages(slug, ctx.traktToken.accessToken) : null;
-        allItems.push({
-          type: "show",
-          title: entry.show?.title || "Unknown",
-          rating: entry.rating,
-          slug,
-          images,
-        });
+        const title = entry.show?.title || "Unknown";
+        const stars = "⭐".repeat(Math.round(entry.rating / 2));
+        lines.push(`📺 **${title}** - ${stars} (${entry.rating}/10)`);
+        kb.push([{ text: `📺 ${title}`, callback_data: `detail:${slug}` }]);
+        if (!posterUrl && slug) {
+          const imgs = await getShowImages(slug, ctx.traktToken.accessToken);
+          posterUrl = getPosterUrl(imgs);
+        }
       }
     }
 
-    if (allItems.length === 0) {
-      await ctx.reply(
-        "⭐ **لا توجد تقييمات**\n\nقيّم الأفلام والمسلسلات التي شاهدتها!",
-        { parse_mode: "Markdown", reply_markup: backToMenu() },
-      );
+    if (lines.length === 0) {
+      await ctx.reply("⭐ **لا توجد تقييمات**\n\nقيّم الأفلام والمسلسلات التي شاهدتها!", {
+        parse_mode: "Markdown", reply_markup: backToMenu(),
+      });
       return;
     }
 
-    const first = allItems[0];
-    const posterUrl = getPosterUrl(first?.images);
-    const caption = `⭐ **تقييماتك**\n\n${allItems.map((item) => {
-      const icon = item.type === "movie" ? "🎬" : "📺";
-      const stars = "⭐".repeat(Math.round(item.rating / 2));
-      return `${icon} **${item.title}** - ${stars} (${item.rating}/10)`;
-    }).join("\n")}`;
-
-    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    for (const item of allItems) {
-      const icon = item.type === "movie" ? "🎬" : "📺";
-      keyboard.push([
-        { text: `${icon} ${item.title}`, callback_data: `detail:${item.slug}` },
-      ]);
-    }
-    keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
+    kb.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
+    const caption = `⭐ **تقييماتك**\n\n${lines.join("\n")}`;
 
     if (posterUrl) {
       await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
-        caption,
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
+        caption, parse_mode: "Markdown", reply_markup: { inline_keyboard: kb },
       });
     } else {
-      await ctx.reply(caption, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
-      });
+      await ctx.reply(caption, { parse_mode: "Markdown", reply_markup: { inline_keyboard: kb } });
     }
   } catch (error) {
     console.error("Ratings error:", error);
@@ -109,47 +83,37 @@ export async function rateItem(ctx: Context, slug: string, rating?: number) {
   }
 
   if (!rating) {
-    await ctx.reply("⭐ اختر تقييمك:", {
-      reply_markup: ratingKeyboard(slug),
-    });
+    await ctx.reply("⭐ اختر تقييمك:", { reply_markup: ratingKeyboard(slug) });
     return;
   }
 
   try {
     const searchRes = await trakt.search.query({
       params: { type: "movie" },
-      query: { query: slug, limit: 1 },
+      query: { query: slug, limit: 1, extended: "full,images" },
     });
     const searchResShow = await trakt.search.query({
       params: { type: "show" },
-      query: { query: slug, limit: 1 },
+      query: { query: slug, limit: 1, extended: "full,images" },
     });
 
-    const searchResults = [...(searchRes.body || []), ...(searchResShow.body || [])];
-    if (searchResults.length === 0) {
-      await ctx.reply("❌ لم يتم العثور على العنصر.");
-      return;
-    }
+    const all = [...(searchRes.body || []), ...(searchResShow.body || [])];
+    if (all.length === 0) { await ctx.reply("❌ لم يتم العثور على العنصر."); return; }
 
-    const found = searchResults[0];
+    const found = all[0];
     const ids = found.movie?.ids || found.show?.ids;
-
-    if (!ids) {
-      await ctx.reply("❌ لم يتم العثور على العنصر.");
-      return;
-    }
+    if (!ids) { await ctx.reply("❌ لم يتم العثور على العنصر."); return; }
 
     const res = await trakt.sync.ratings.add({
       body: { movies: found.movie ? [{ ids, rating }] : [], shows: found.show ? [{ ids, rating }] : [] },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
+    const title = found.movie?.title || found.show?.title;
     if (res.status === 201) {
-      const title = found.movie?.title || found.show?.title;
-      await ctx.reply(
-        `✅ تمت تقييم **${title}** بـ ${"⭐".repeat(Math.round(rating / 2))} (${rating}/10)`,
-        { parse_mode: "Markdown" },
-      );
+      await ctx.reply(`✅ تمت تقييم **${title}** بـ ${"⭐".repeat(Math.round(rating / 2))} (${rating}/10)`, {
+        parse_mode: "Markdown",
+      });
     } else {
       await ctx.reply("❌ حدث خطأ أثناء التقييم.");
     }

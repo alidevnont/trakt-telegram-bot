@@ -5,9 +5,7 @@ import { backToMenu } from "../keyboards.ts";
 
 export async function historyCommand(ctx: Context, page = 1) {
   if (!ctx.traktToken) {
-    await ctx.reply(
-      "🔒 هذا الأمر يتطلب ربط حساب Trakt.\n\nاستخدم /start للربط.",
-    );
+    await ctx.reply("🔒 هذا الأمر يتطلب ربط حساب Trakt.\n\nاستخدم /start للربط.");
     return;
   }
 
@@ -42,59 +40,35 @@ export async function historyCommand(ctx: Context, page = 1) {
       return;
     }
 
-    const allItems: Array<{
-      title: string;
-      watched_at: string | null;
-      action: string;
-      slug: string;
-      images: Awaited<ReturnType<typeof getMovieImages>>;
-    }> = [];
+    // Get poster for first item
+    const first = allEntries[0];
+    const firstSlug = first.movie?.ids?.slug || first.show?.ids?.slug || "";
+    const firstImages = first.movie
+      ? await getMovieImages(firstSlug, ctx.traktToken.accessToken)
+      : await getShowImages(firstSlug, ctx.traktToken.accessToken);
+    const posterUrl = getPosterUrl(firstImages);
+
+    const lines: string[] = [];
+    const kb: Array<Array<{ text: string; callback_data: string }>> = [];
 
     for (const entry of allEntries) {
-      const movie = entry.movie;
-      const show = entry.show;
-      const title = movie?.title || show?.title || entry.episode?.title || entry.type;
-      const slug = movie?.ids?.slug || show?.ids?.slug || "";
-      const images = movie
-        ? await getMovieImages(slug, ctx.traktToken.accessToken)
-        : await getShowImages(slug, ctx.traktToken.accessToken);
-      allItems.push({
-        title,
-        watched_at: entry.watched_at,
-        action: entry.action,
-        slug,
-        images,
-      });
+      const title = entry.movie?.title || entry.show?.title || entry.episode?.title || "Unknown";
+      const slug = entry.movie?.ids?.slug || entry.show?.ids?.slug || "";
+      const date = entry.watched_at ? new Date(entry.watched_at).toLocaleDateString("ar-SA") : "";
+      lines.push(`• **${title}** - ${entry.action}\n   📅 ${date}`);
+      if (slug) kb.push([{ text: `ℹ️ ${title}`, callback_data: `detail:${slug}` }]);
     }
 
-    const first = allItems[0];
-    const posterUrl = getPosterUrl(first?.images);
-    const caption = `📺 **سجل المشاهدة** (صفحة ${page})\n\n${allItems.map((item) => {
-      const date = item.watched_at ? new Date(item.watched_at).toLocaleDateString("ar-SA") : "";
-      return `• **${item.title}** - ${item.action}\n   📅 ${date}`;
-    }).join("\n")}`;
+    kb.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
 
-    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    for (const item of allItems) {
-      if (item.slug) {
-        keyboard.push([
-          { text: `ℹ️ ${item.title}`, callback_data: `detail:${item.slug}` },
-        ]);
-      }
-    }
-    keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
+    const caption = `📺 **سجل المشاهدة** (صفحة ${page})\n\n${lines.join("\n")}`;
 
     if (posterUrl) {
       await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
-        caption,
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
+        caption, parse_mode: "Markdown", reply_markup: { inline_keyboard: kb },
       });
     } else {
-      await ctx.reply(caption, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
-      });
+      await ctx.reply(caption, { parse_mode: "Markdown", reply_markup: { inline_keyboard: kb } });
     }
   } catch (error) {
     console.error("History error:", error);
@@ -111,37 +85,28 @@ export async function addToHistory(ctx: Context, slug: string) {
   try {
     const searchRes = await trakt.search.query({
       params: { type: "movie" },
-      query: { query: slug, limit: 1 },
+      query: { query: slug, limit: 1, extended: "full,images" },
     });
     const searchResShow = await trakt.search.query({
       params: { type: "show" },
-      query: { query: slug, limit: 1 },
+      query: { query: slug, limit: 1, extended: "full,images" },
     });
 
-    const searchResults = [...(searchRes.body || []), ...(searchResShow.body || [])];
-    if (searchResults.length === 0) {
-      await ctx.reply("❌ لم يتم العثور على العنصر.");
-      return;
-    }
+    const all = [...(searchRes.body || []), ...(searchResShow.body || [])];
+    if (all.length === 0) { await ctx.reply("❌ لم يتم العثور على العنصر."); return; }
 
-    const found = searchResults[0];
+    const found = all[0];
     const ids = found.movie?.ids || found.show?.ids;
-
-    if (!ids) {
-      await ctx.reply("❌ لم يتم العثور على العنصر.");
-      return;
-    }
+    if (!ids) { await ctx.reply("❌ لم يتم العثور على العنصر."); return; }
 
     const res = await trakt.sync.history.add({
       body: { movies: found.movie ? [{ ids }] : [], shows: found.show ? [{ ids }] : [] },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
+    const title = found.movie?.title || found.show?.title;
     if (res.status === 200) {
-      const title = found.movie?.title || found.show?.title;
-      await ctx.reply(`✅ تمت إضافة **${title}** إلى سجل المشاهدة.`, {
-        parse_mode: "Markdown",
-      });
+      await ctx.reply(`✅ تمت إضافة **${title}** إلى سجل المشاهدة.`, { parse_mode: "Markdown" });
     } else {
       await ctx.reply("❌ حدث خطأ أثناء الإضافة.");
     }

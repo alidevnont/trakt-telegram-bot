@@ -10,7 +10,6 @@ import { calendarCommand } from "./commands/calendar.ts";
 import { statsCommand } from "./commands/stats.ts";
 import { helpCommand } from "./commands/help.ts";
 import { trakt } from "../trakt/client.ts";
-import { getMovieImages, getShowImages, getPosterUrl } from "../trakt/images.ts";
 import { mainMenu, backToMenu } from "./keyboards.ts";
 
 export function createBot(token: string) {
@@ -94,13 +93,14 @@ export function createBot(token: string) {
       // Try to get as movie first, then show
       let res = await trakt.movies.summary({
         params: { id: slug },
-        query: { extended: "full" },
+        query: { extended: "full,images" },
       });
 
       if (res.status === 200) {
         const movie = res.body;
-        const images = await getMovieImages(slug, ctx.traktToken?.accessToken);
-        const posterUrl = getPosterUrl(images);
+        const body = movie as unknown as Record<string, unknown>;
+        const images = body?.images as Record<string, Record<string, string>> | undefined;
+        const posterUrl = images?.poster?.full || images?.poster?.medium || null;
         const message = [
           `🎬 **${movie.title}** (${movie.year || "?"})`,
           "",
@@ -149,13 +149,14 @@ export function createBot(token: string) {
       // Try as show
       res = await trakt.shows.summary({
         params: { id: slug },
-        query: { extended: "full" },
+        query: { extended: "full,images" },
       });
 
       if (res.status === 200) {
         const show = res.body;
-        const images = await getShowImages(slug, ctx.traktToken?.accessToken);
-        const posterUrl = getPosterUrl(images);
+        const body = show as unknown as Record<string, unknown>;
+        const images = body?.images as Record<string, Record<string, string>> | undefined;
+        const posterUrl = images?.poster?.full || images?.poster?.medium || null;
         const message = [
           `📺 **${show.title}** (${show.year || "?"})`,
           "",

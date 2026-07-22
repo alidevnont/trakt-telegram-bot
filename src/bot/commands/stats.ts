@@ -4,26 +4,21 @@ import { backToMenu } from "../keyboards.ts";
 
 export async function statsCommand(ctx: Context) {
   if (!ctx.traktToken) {
-    await ctx.reply(
-      "🔒 هذا الأمر يتطلب ربط حساب Trakt.\n\nاستخدم /start للربط.",
-    );
+    await ctx.reply("🔒 هذا الأمر يتطلب ربط حساب Trakt.\n\nاستخدم /start للربط.");
     return;
   }
 
   try {
     const username = ctx.traktToken.username;
-    console.log(`Stats: fetching for username="${username}"`);
 
     const statsRes = await trakt.users.stats({
       params: { id: username },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
-    console.log(`Stats: status=${statsRes.status}`);
-
     if (statsRes.status !== 200) {
-      console.error("Stats API error:", JSON.stringify(statsRes));
-      await ctx.reply(`❌ حدث خطأ أثناء تحميل الإحصائيات. (status: ${statsRes.status})`);
+      console.error("Stats error:", statsRes.status, JSON.stringify(statsRes.body).slice(0, 500));
+      await ctx.reply(`❌ حدث خطأ أثناء تحميل الإحصائيات. (code: ${statsRes.status})\n\nجرب إعادة ربط الحساب بـ /start`);
       return;
     }
 
@@ -66,12 +61,9 @@ export async function statsCommand(ctx: Context) {
       [{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }],
     ];
 
-    await ctx.reply(message, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: keyboard },
-    });
+    await ctx.reply(message, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
   } catch (error) {
-    console.error("Stats error:", error.message || error, error.stack || "");
+    console.error("Stats error:", error.message || error);
     await ctx.reply("❌ حدث خطأ أثناء تحميل الإحصائيات.");
   }
 }
