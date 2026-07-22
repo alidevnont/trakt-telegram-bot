@@ -1,5 +1,6 @@
 import { Context } from "grammy";
 import { trakt } from "../../trakt/client.ts";
+import { getMovieImages, getShowImages, getPosterUrl } from "../../trakt/images.ts";
 import { backToMenu } from "../keyboards.ts";
 
 export async function watchlistCommand(ctx: Context, page = 1) {
@@ -25,21 +26,60 @@ export async function watchlistCommand(ctx: Context, page = 1) {
       return;
     }
 
-    let message = `📋 **قائمة المشاهدة** (صفحة ${page})\n\n`;
-    const keyboard = [];
+    const allItems: Array<{
+      type: string;
+      title: string;
+      slug: string;
+      listed_at: string | null;
+      images: Awaited<ReturnType<typeof getMovieImages>>;
+    }> = [];
 
     for (const item of res.body) {
-      const title = item.movie?.title || item.show?.title || item.episode?.title || item.type;
-      const icon = item.type === "movie" ? "🎬" : "📺";
-      message += `${icon} **${title}** - ${item.listed_at ? new Date(item.listed_at).toLocaleDateString("ar-SA") : ""}\n`;
+      const movie = item.movie;
+      const show = item.show;
+      const title = movie?.title || show?.title || item.episode?.title || item.type;
+      const slug = movie?.ids?.slug || show?.ids?.slug || "";
+      const images = movie
+        ? await getMovieImages(slug, ctx.traktToken.accessToken)
+        : await getShowImages(slug, ctx.traktToken.accessToken);
+      allItems.push({
+        type: item.type,
+        title,
+        slug,
+        listed_at: item.listed_at,
+        images,
+      });
     }
 
+    const first = allItems[0];
+    const posterUrl = getPosterUrl(first?.images);
+    const caption = `📋 **قائمة المشاهدة** (صفحة ${page})\n\n${allItems.map((item) => {
+      const icon = item.type === "movie" ? "🎬" : "📺";
+      const date = item.listed_at ? new Date(item.listed_at).toLocaleDateString("ar-SA") : "";
+      return `${icon} **${item.title}** - ${date}`;
+    }).join("\n")}`;
+
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (const item of allItems) {
+      const icon = item.type === "movie" ? "🎬" : "📺";
+      keyboard.push([
+        { text: `${icon} ${item.title}`, callback_data: `detail:${item.slug}` },
+      ]);
+    }
     keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
 
-    await ctx.reply(message, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: keyboard },
-    });
+    if (posterUrl) {
+      await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
+        caption,
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
+    } else {
+      await ctx.reply(caption, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
+    }
   } catch (error) {
     console.error("Watchlist error:", error);
     await ctx.reply("❌ حدث خطأ أثناء تحميل قائمة المشاهدة.");

@@ -1,5 +1,6 @@
 import { Context } from "grammy";
 import { trakt } from "../../trakt/client.ts";
+import { getMovieImages, getShowImages, getPosterUrl } from "../../trakt/images.ts";
 import { backToMenu } from "../keyboards.ts";
 
 export async function historyCommand(ctx: Context, page = 1) {
@@ -41,25 +42,60 @@ export async function historyCommand(ctx: Context, page = 1) {
       return;
     }
 
-    let message = `📺 **سجل المشاهدة** (صفحة ${page})\n\n`;
-    const keyboard = [];
+    const allItems: Array<{
+      title: string;
+      watched_at: string | null;
+      action: string;
+      slug: string;
+      images: Awaited<ReturnType<typeof getMovieImages>>;
+    }> = [];
 
     for (const entry of allEntries) {
-      const watched = entry.watched_at
-        ? new Date(entry.watched_at).toLocaleDateString("ar-SA")
-        : "";
-      const icon = entry.type === "movie" ? "🎬" : "📺";
-      const title = entry.movie?.title || entry.show?.title || entry.episode?.title || entry.type;
-      message += `${icon} **${title}** - ${entry.action}\n`;
-      message += `   📅 ${watched}\n`;
+      const movie = entry.movie;
+      const show = entry.show;
+      const title = movie?.title || show?.title || entry.episode?.title || entry.type;
+      const slug = movie?.ids?.slug || show?.ids?.slug || "";
+      const images = movie
+        ? await getMovieImages(slug, ctx.traktToken.accessToken)
+        : await getShowImages(slug, ctx.traktToken.accessToken);
+      allItems.push({
+        title,
+        watched_at: entry.watched_at,
+        action: entry.action,
+        slug,
+        images,
+      });
     }
 
+    const first = allItems[0];
+    const posterUrl = getPosterUrl(first?.images);
+    const caption = `📺 **سجل المشاهدة** (صفحة ${page})\n\n${allItems.map((item) => {
+      const date = item.watched_at ? new Date(item.watched_at).toLocaleDateString("ar-SA") : "";
+      return `• **${item.title}** - ${item.action}\n   📅 ${date}`;
+    }).join("\n")}`;
+
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (const item of allItems) {
+      if (item.slug) {
+        keyboard.push([
+          { text: `ℹ️ ${item.title}`, callback_data: `detail:${item.slug}` },
+        ]);
+      }
+    }
     keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
 
-    await ctx.reply(message, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: keyboard },
-    });
+    if (posterUrl) {
+      await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
+        caption,
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
+    } else {
+      await ctx.reply(caption, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
+    }
   } catch (error) {
     console.error("History error:", error);
     await ctx.reply("❌ حدث خطأ أثناء تحميل سجل المشاهدة.");

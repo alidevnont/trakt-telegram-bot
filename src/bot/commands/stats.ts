@@ -12,14 +12,18 @@ export async function statsCommand(ctx: Context) {
 
   try {
     const username = ctx.traktToken.username;
+    console.log(`Stats: fetching for username="${username}"`);
 
     const statsRes = await trakt.users.stats({
       params: { id: username },
       headers: { Authorization: `Bearer ${ctx.traktToken.accessToken}` },
     });
 
+    console.log(`Stats: status=${statsRes.status}`);
+
     if (statsRes.status !== 200) {
-      await ctx.reply("❌ حدث خطأ أثناء تحميل الإحصائيات.");
+      console.error("Stats API error:", JSON.stringify(statsRes));
+      await ctx.reply(`❌ حدث خطأ أثناء تحميل الإحصائيات. (status: ${statsRes.status})`);
       return;
     }
 
@@ -67,7 +71,7 @@ export async function statsCommand(ctx: Context) {
       reply_markup: { inline_keyboard: keyboard },
     });
   } catch (error) {
-    console.error("Stats error:", error.message || error);
+    console.error("Stats error:", error.message || error, error.stack || "");
     await ctx.reply("❌ حدث خطأ أثناء تحميل الإحصائيات.");
   }
 }

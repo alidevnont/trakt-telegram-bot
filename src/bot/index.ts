@@ -10,6 +10,7 @@ import { calendarCommand } from "./commands/calendar.ts";
 import { statsCommand } from "./commands/stats.ts";
 import { helpCommand } from "./commands/help.ts";
 import { trakt } from "../trakt/client.ts";
+import { getMovieImages, getShowImages, getPosterUrl } from "../trakt/images.ts";
 import { mainMenu, backToMenu } from "./keyboards.ts";
 
 export function createBot(token: string) {
@@ -97,6 +98,8 @@ export function createBot(token: string) {
 
       if (res.status === 200) {
         const movie = res.body;
+        const images = await getMovieImages(slug, ctx.traktToken?.accessToken);
+        const posterUrl = getPosterUrl(images);
         const message = [
           `🎬 **${movie.title}** (${movie.year || "?"})`,
           "",
@@ -106,7 +109,7 @@ export function createBot(token: string) {
           `⏱️ ${movie.runtime || "?"} دقيقة`,
           `📅 ${movie.released || "?"}`,
           `🏷️ ${movie.genres?.join(", ") || "?"}`,
-          ` certification: ${movie.certification || "N/A"}`,
+          `🔒 ${movie.certification || "N/A"}`,
         ].join("\n");
 
         const keyboard = [
@@ -123,10 +126,22 @@ export function createBot(token: string) {
           [{ text: "🔙 رجوع", callback_data: "back_to_menu" }],
         ];
 
-        await ctx.editMessageText(message, {
-          parse_mode: "Markdown",
-          reply_markup: { inline_keyboard: keyboard },
-        });
+        if (posterUrl) {
+          // Delete the old text message and send a new photo
+          try {
+            await ctx.api.deleteMessage(ctx.chat!.id, ctx.callbackQuery.message!.message_id);
+          } catch {}
+          await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
+            caption: message,
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard },
+          });
+        } else {
+          await ctx.editMessageText(message, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard },
+          });
+        }
         return;
       }
 
@@ -137,6 +152,8 @@ export function createBot(token: string) {
 
       if (res.status === 200) {
         const show = res.body;
+        const images = await getShowImages(slug, ctx.traktToken?.accessToken);
+        const posterUrl = getPosterUrl(images);
         const message = [
           `📺 **${show.title}** (${show.year || "?"})`,
           "",
@@ -161,10 +178,21 @@ export function createBot(token: string) {
           [{ text: "🔙 رجوع", callback_data: "back_to_menu" }],
         ];
 
-        await ctx.editMessageText(message, {
-          parse_mode: "Markdown",
-          reply_markup: { inline_keyboard: keyboard },
-        });
+        if (posterUrl) {
+          try {
+            await ctx.api.deleteMessage(ctx.chat!.id, ctx.callbackQuery.message!.message_id);
+          } catch {}
+          await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
+            caption: message,
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard },
+          });
+        } else {
+          await ctx.editMessageText(message, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: keyboard },
+          });
+        }
         return;
       }
 

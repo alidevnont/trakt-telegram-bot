@@ -1,5 +1,6 @@
 import { Context } from "grammy";
 import { trakt } from "../../trakt/client.ts";
+import { getMovieImages, getShowImages, getPosterUrl } from "../../trakt/images.ts";
 import { backToMenu } from "../keyboards.ts";
 
 export async function recommendationsCommand(ctx: Context) {
@@ -20,32 +21,48 @@ export async function recommendationsCommand(ctx: Context) {
       }),
     ]);
 
-    let message = "🎯 **توصياتك الشخصية**\n\n";
-    const keyboard = [];
+    const allItems: Array<{
+      type: "movie" | "show";
+      title: string;
+      year: number | null;
+      rating: number | null;
+      slug: string;
+      images: Awaited<ReturnType<typeof getMovieImages>>;
+    }> = [];
 
     if (moviesRes.status === 200 && moviesRes.body.length > 0) {
-      message += "🎬 **أفلام موصى بها:**\n\n";
-      for (const movie of moviesRes.body.slice(0, 5)) {
-        message += `• **${movie.title}** (${movie.year || "?"})\n`;
-        message += `  ⭐ ${movie.rating || "N/A"}\n`;
-        keyboard.push([
-          { text: `🎬 ${movie.title}`, callback_data: `detail:${movie.ids?.slug}` },
-        ]);
+      for (const movie of moviesRes.body.slice(0, 3)) {
+        if (movie.ids?.slug) {
+          const images = await getMovieImages(movie.ids.slug, ctx.traktToken.accessToken);
+          allItems.push({
+            type: "movie",
+            title: movie.title || "Unknown",
+            year: movie.year,
+            rating: movie.rating,
+            slug: movie.ids.slug,
+            images,
+          });
+        }
       }
     }
 
     if (showsRes.status === 200 && showsRes.body.length > 0) {
-      message += "\n📺 **مسلسلات موصى بها:**\n\n";
-      for (const show of showsRes.body.slice(0, 5)) {
-        message += `• **${show.title}** (${show.year || "?"})\n`;
-        message += `  ⭐ ${show.rating || "N/A"}\n`;
-        keyboard.push([
-          { text: `📺 ${show.title}`, callback_data: `detail:${show.ids?.slug}` },
-        ]);
+      for (const show of showsRes.body.slice(0, 3)) {
+        if (show.ids?.slug) {
+          const images = await getShowImages(show.ids.slug, ctx.traktToken.accessToken);
+          allItems.push({
+            type: "show",
+            title: show.title || "Unknown",
+            year: show.year,
+            rating: show.rating,
+            slug: show.ids.slug,
+            images,
+          });
+        }
       }
     }
 
-    if (moviesRes.status !== 200 && showsRes.status !== 200) {
+    if (allItems.length === 0) {
       await ctx.reply(
         "❌ لا توجد توصيات حالياً.",
         { reply_markup: backToMenu() },
@@ -53,12 +70,35 @@ export async function recommendationsCommand(ctx: Context) {
       return;
     }
 
+    const first = allItems[0];
+    const posterUrl = getPosterUrl(first.images);
+    const caption = `🎯 **توصياتك الشخصية**\n\n${allItems.map((item) => {
+      const icon = item.type === "movie" ? "🎬" : "📺";
+      const stars = item.rating ? "⭐".repeat(Math.round(item.rating / 2)) : "";
+      return `${icon} **${item.title}** (${item.year || "?"})\n⭐ ${item.rating || "N/A"} ${stars}`;
+    }).join("\n\n")}`;
+
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (const item of allItems) {
+      const icon = item.type === "movie" ? "🎬" : "📺";
+      keyboard.push([
+        { text: `${icon} ${item.title}`, callback_data: `detail:${item.slug}` },
+      ]);
+    }
     keyboard.push([{ text: "🔙 القائمة الرئيسية", callback_data: "back_to_menu" }]);
 
-    await ctx.reply(message, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: keyboard },
-    });
+    if (posterUrl) {
+      await ctx.api.sendPhoto(ctx.chat!.id, posterUrl, {
+        caption,
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
+    } else {
+      await ctx.reply(caption, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
+    }
   } catch (error) {
     console.error("Recommendations error:", error);
     await ctx.reply("❌ حدث خطأ أثناء تحميل التوصيات.");
